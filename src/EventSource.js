@@ -14,8 +14,18 @@ class EventSource {
     this.timeout = options.timeOut || 0;
     this.headers = options.headers || {};
     this.body = options.body || undefined;
-    this.debug = options.debug || false;
+    this.logger = undefined;
     this.timeoutBeforeConnection = options.timeoutBeforeConnection ?? 500;
+
+    if (options.logger) {
+      this.logger = {
+        log: options.logger.log,
+        info: options.logger.info || options.logger.log,
+        warn: options.logger.warn || options.logger.log,
+        trace: options.logger.trace || options.logger.log,
+        error: options.logger.error || options.logger.log,
+      }
+    }
 
     this._xhr = null;
     this._pollTimer = null;
@@ -65,13 +75,13 @@ class EventSource {
       this._xhr.timeout = this.timeout;
 
       this._xhr.onreadystatechange = () => {
+        if (this.status === this.CLOSED) {
+          return;
+        }
+
         const xhr = this._xhr;
 
-        if (this.debug) {
-          console.debug(
-            `[EventSource][onreadystatechange] ReadyState: ${xhr.readyState}, status: ${xhr.status}`
-          );
-        }
+        this.logger?.log(`[EventSource][onreadystatechange] ReadyState: ${xhr.readyState}, status: ${xhr.status}`)
 
         if (![XMLHttpRequest.DONE, XMLHttpRequest.LOADING].includes(xhr.readyState)) {
           return;
@@ -86,11 +96,7 @@ class EventSource {
           this._handleEvent(xhr.responseText || '');
 
           if (xhr.readyState === XMLHttpRequest.DONE) {
-            if (this.debug) {
-              console.debug(
-                '[EventSource][onreadystatechange][DONE] Operation done. Reconnecting...'
-              );
-            }
+            this.logger?.info('[EventSource][onreadystatechange][DONE] Operation done. Reconnecting...');
             this._pollAgain(this.interval);
           }
         } else if (this.status !== EventSource.CLOSED) {
@@ -104,18 +110,17 @@ class EventSource {
           }
 
           if ([XMLHttpRequest.DONE, XMLHttpRequest.UNSENT].includes(xhr.readyState)) {
-            if (this.debug) {
-              console.debug(
-                '[EventSource][onreadystatechange][ERROR] Response status error. Reconnecting...'
-              );
-            }
-
+            this.logger?.error('[EventSource][onreadystatechange][ERROR] Response status error. Reconnecting...');
             this._pollAgain(this.interval);
           }
         }
       };
 
-      this._xhr.onerror = (e) => {
+      this._xhr.onerror = () => {
+        if (this.status === this.CLOSED) {
+          return;
+        }
+
         this.status === EventSource.ERROR;
 
         this.dispatch('error', {
@@ -155,7 +160,13 @@ class EventSource {
 
   _handleEvent(response) {
     const parts = response.substr(this.lastIndexProcessed).split('\n');
-    this.lastIndexProcessed = response.lastIndexOf('\n\n') + 2;
+
+    let indexOfDoubleNewline = response.lastIndexOf('\n\n');
+
+    if (indexOfDoubleNewline != -1) {
+      this.lastIndexProcessed = indexOfDoubleNewline + 2;
+    }
+
     let data = [];
     let retry = 0;
     let line = '';
@@ -198,7 +209,7 @@ class EventSource {
     if (!this._eventHandlers.has(type)) {
       this._eventHandlers.set(type, new Set());
     }
-    
+
     this._eventHandlers.get(type).add(listener);
   }
 
@@ -219,7 +230,7 @@ class EventSource {
   dispatch(type, data) {
     const handlers = this._eventHandlers.get(type);
 
-    if(handlers){
+    if (handlers) {
       handlers.forEach(handler => {
         handler(data);
       });

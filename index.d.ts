@@ -35,12 +35,20 @@ export interface CustomEvent<E extends string> {
   url: string;
 }
 
+export interface Logger {
+  log: (...args: string[]) => void;
+  info?: (...args: string[]) => void;
+  warn?: (...args: string[]) => void;
+  trace?: (...args: string[]) => void;
+  error?: (...args: string[]) => void;
+}
+
 export interface EventSourceOptions {
   method?: string;
   timeout?: number;
   headers?: Record<string, any>;
   body?: any;
-  debug?: boolean;
+  logger?: Logger;
   pollingInterval?: number;
   timeoutBeforeConnection?: number;
 }
